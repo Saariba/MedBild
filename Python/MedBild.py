@@ -32,8 +32,8 @@ def give_Dicom():
     reader.SetFileNames(filenamesDICOM)
     imgOriginal = reader.Execute()  # Starts the Reader
 
-    for x in range(0, idxSlice):                            # iterate through all the files (0-idxSlice)
-        imgnew = imgOriginal[:, :, x]                       # Display the current Picture
+    for x in range(0, idxSlice):  # iterate through all the files (0-idxSlice)
+        imgnew = imgOriginal[:, :, x]  # Display the current Picture
         sitk_show(imgnew, 'Picture' + str(x + 1))
         plt.pause(0.001)
         user = input("Press [enter] to continue.")  # Pressing enter gives the next image
