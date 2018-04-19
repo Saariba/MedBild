@@ -23,7 +23,9 @@ def sitk_show(img, title=None, margin=0.05, dpi=40):  # Shows the Image in a Plo
 
 
 def give_Dicom():
-    path = "./test/"  # reads the path of the Dicom files
+    print("Move the Folders with the Patient file into this Directory")
+    patient = input("Enter the Patient Number (01-12)")
+    path = "./P" + patient.lstrip() + "/"  # reads the path of the Dicom files
     files = os.listdir(path)
     idxSlice = len(files)  # get the Number of Files in a Path (one Dicom Series)
 
