@@ -24,15 +24,17 @@ def sitk_show(img, title=None, margin=0.05, dpi=40):  # Shows the Image in a Plo
 
 def give_Dicom():
     print("Move the Folders with the Patient file into this Directory")
-    patient = input("Enter the Patient Number (01-12)")
-    path = "./P" + patient.lstrip() + "/"  # reads the path of the Dicom files
+    patient = input("Enter the Patient Number (1-12)").lstrip()
+    if len(patient) == 1:
+        patient = '0' + patient
+    path = "./P" + patient + "/"  # reads the path of the Dicom files
     files = os.listdir(path)
     idxSlice = len(files)  # get the Number of Files in a Path (one Dicom Series)
 
     reader = sitk.ImageSeriesReader()  # Loads the Dicom Reader
     filenamesDICOM = reader.GetGDCMSeriesFileNames(path)  # Load the Dicom files into the Reader
     reader.SetFileNames(filenamesDICOM)
-    imgOriginal = reader.Execute()  # Starts the Reader
+    imgOriginal = reader.Execute()
 
     for x in range(0, idxSlice):  # iterate through all the files (0-idxSlice)
         imgnew = imgOriginal[:, :, x]  # Display the current Picture
