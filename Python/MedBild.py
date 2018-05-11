@@ -137,29 +137,6 @@ def resample(image, scan, new_spacing=[1, 1, 1]):
     return image
 
 
-def sample3d(imgstack):
-    # res = np.dstack((A, B))
-    # res = np.dstack((res,C))
-    # np.save(output_path + "fullimage3d_%d.npy" % (1), res)
-    res = np.load(output_path + 'fullimage3d_1.npy')
-    # res = np.dstack(imgstack)
-    # for element in range(2, len(imgstack)):
-    #     res = np.dstack((res, imgstack[element]))
-    #     print("Finished" + str(element))
-    # np.swapaxes(res, 0, 1)
-    return res
-
-
-def sample3d_save():
-    start = time.clock()
-    for x in range(1, 12):
-        patient = load_scan(data_path(str(x)))
-        res = np.dstack(patient)
-        np.save(output_path + "fullimage3d_%d.npy" % x, res)
-        print("Done " + str(x))
-    print(time.clock() - start, "Seconds")
-
-
 def imtoArray(files):
     files[0] = sitk.GetArrayFromImage(files[0])
     for x in range(1, len(files)):
