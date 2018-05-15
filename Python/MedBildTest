@@ -1,0 +1,258 @@
+from __future__ import print_function
+import numpy as np
+import os
+import SimpleITK as sitk
+import matplotlib.pyplot as plt
+import time
+
+
+class IndexTracker(object):
+    def __init__(self, ax, X):
+        self.ax = ax
+        ax.set_title('use scroll wheel to navigate images')
+
+        self.X = X
+        rows, cols = X[0].shape
+        self.slices = len(X)
+        self.ind = self.slices // 2
+
+        self.im = ax.imshow(self.X[self.ind])
+        self.update()
+
+    def onscroll(self, event):
+        print("%s %s" % (event.button, event.step))
+        if event.button == 'up':
+            self.ind = (self.ind + 1) % self.slices
+        else:
+            self.ind = (self.ind - 1) % self.slices
+        self.update()
+
+    def update(self):
+        self.im.set_data(self.X[self.ind])
+        ax.set_ylabel('slice %s' % self.ind)
+        self.im.axes.figure.canvas.draw()
+
+
+def get_pixels_hu(slices):
+    image = np.stack([s.pixel_array for s in slices])
+    # Convert to int16 (from sometimes int16),
+    # should be possible as values should always be low enough (<32k)
+    image = image.astype(np.int16)
+
+    # Set outside-of-scan pixels to 0
+    # The intercept is usually -1024, so air is approximately 0
+    image[image == -2000] = 0
+
+    # Convert to Hounsfield units (HU)
+    for slice_number in range(len(slices)):
+
+        intercept = slices[slice_number].RescaleIntercept
+        slope = slices[slice_number].RescaleSlope
+
+        if slope != 1:
+            image[slice_number] = slope * image[slice_number].astype(np.float64)
+            image[slice_number] = image[slice_number].astype(np.int16)
+
+        image[slice_number] += np.int16(intercept)
+
+    return np.array(image, dtype=np.int16)
+
+
+def data_path(x):
+    if len(x) == 1:
+        x = '0' + x.lstrip()
+    path = "./P" + x.lstrip() + "/"
+    return path
+
+
+output_path = working_path = "./Docs"
+
+
+def load_scan(path):
+    files = os.listdir(path)
+    idxSlice = len(files)  # get the Number of Files in a Path (one Dicom Series)
+
+    reader = sitk.ImageSeriesReader()  # Loads the Dicom Reader
+    filenamesDICOM = reader.GetGDCMSeriesFileNames(path)  # Load the Dicom files into the Reader
+    reader.SetFileNames(filenamesDICOM)
+    imgOriginal = reader.Execute()
+    imgarray = []
+    for x in range(0, idxSlice):
+        pic = imgOriginal[:, :, x]
+        imgarray.append(pic)
+    return imgarray
+
+
+def give_histogramm(id):
+    file_used = output_path + "fullimages_%d.npy" % id
+    img_to_process = np.load(file_used).astype(np.float64)
+
+    plt.hist(img_to_process.flatten(), bins=50, color='c')
+    plt.xlabel("Houndsfield Units (HU)")
+    plt.ylabel("Frequency")
+    plt.show()
+
+
+def display_image_stack(stack, rows=6, cols=6, start_with=10, show_every=2):
+    fig, ax = plt.subplots(rows, cols, figsize=[12, 12])
+    for i in range(rows * cols):
+        ind = start_with + i * show_every - 1
+        ax[int(i / rows), int(i % rows)].set_title('slice %d' % ind)
+        ax[int(i / rows), int(i % rows)].imshow(stack[ind], cmap='gray')
+        ax[int(i / rows), int(i % rows)].axis('off')
+    plt.show()
+
+
+def display_image(img, title=None, margin=0.05, dpi=40):  # Shows the Image in a Plot
+    nda = sitk.GetArrayFromImage(img)
+    spacing = img.GetSpacing()
+    figsize = (1 + margin) * nda.shape[0] / dpi, (1 + margin) * nda.shape[1] / dpi
+    extent = (0, nda.shape[1] * spacing[1], nda.shape[0] * spacing[0], 0)
+    fig = plt.figure(figsize=figsize, dpi=dpi)
+    ax = fig.add_axes([margin, margin, 1 - 2 * margin, 1 - 2 * margin])
+
+    plt.set_cmap("gray")
+    ax.imshow(nda, extent=extent, interpolation=None)
+    print("max Value: " + str(np.max(nda)) + "min Value: " + str(np.min(nda)))
+    if title:
+        plt.title(title)
+    plt.show()
+
+
+def resample(image, scan, new_spacing=[1, 1, 1]):
+    # Determine current pixel spacing
+    # spacing = np.array([scan[0].SliceThickness] + scan[0].PixelSpacing, dtype=np.float32)
+    print("Resampling image, putting the Layers Together")
+    spacing = np.array([scan[0].SliceThickness, scan[0].PixelSpacing[0], scan[0].PixelSpacing[1]],
+                       dtype=np.float32)
+    resize_factor = spacing / new_spacing
+    new_real_shape = image.shape * resize_factor
+    new_shape = np.round(new_real_shape)
+    real_resize_factor = new_shape / image.shape
+    new_spacing = spacing / real_resize_factor
+
+    image = scipy.ndimage.interpolation.zoom(image, real_resize_factor)
+    print("done")
+
+    return image
+
+
+def imtoArray(files):
+    files[0] = sitk.GetArrayFromImage(files[0])
+    for x in range(1, len(files)):
+        files[x] = sitk.GetArrayFromImage(files[x])
+    return files
+
+def dif(x,y):
+    res = x-y
+    if res <0:
+        res *= -1
+    return res
+
+#Handles everything around RegionGrowing as Validation and multi layer
+#maxdif - maximal difference every pixel is allowed to differ from the original seed
+#will later return whole image stack. For now the current slide
+def RGHandler(imgstack,startindex, startseed, maxdif):
+    seed = startseed;
+    index = startindex;
+
+    #start with the first slide and the provided user input
+    #compute intial treshhold
+    # tresh is either the difference between the average surrounding 5x5 pixel or the difference between the seed and the surrounding minimum
+    originalAV, rpoint = AverageMinValueEightNeigh(imgstack[index], seed)
+    if (dif(imgstack[index][seed[0], seed[1]],imgstack[index][rpoint[0], rpoint[1]])) < dif(imgstack[index][seed[0], seed[1]],originalAV):
+        tresh = dif(imgstack[index][seed[0], seed[1]],originalAV)*3
+    else:
+        tresh = dif(imgstack[index][seed[0], seed[1]],imgstack[index][rpoint[0], rpoint[1]])*3
+    #actual compute region
+    currslide = RegionGrowing(imgstack[index],seed,tresh,maxdif,originalAV)
+    #Validate first slide
+    while(currslide[0,0] == -1):
+        currslide = RegionGrowing(imgstack[index],seed,tresh-2,maxdif,originalAV)
+
+    return currslide
+
+#pure Region Growing Algo
+#maxdif - maximal difference every pixel is allowed to differ from the original seed
+#returns filtered mask
+def RegionGrowing(img, seed,tresh, maxdif, seedAV):
+    list = [] #points that are in need to be checked
+    output = np.zeros_like(img)
+    list.append((seed[0], seed[1]))
+    processed = []
+    cont = 1
+
+    while (len(list)>0 and cont):
+        current = list[0]
+        output[current[0],current[1]] = 255
+        for neighbour in eightNeighbours(current, img.shape): #perform the search fpr correspondent pixel in 8N
+            if (not neighbour in processed):
+                dist = dif(img[neighbour[0], neighbour[1]],img[current[0], current[1]])
+                distToOrgin = dif(img[neighbour[0], neighbour[1]],seedAV)
+                # check whether the new pixel is around our current pixel and in the valuespace around our seed
+                if (dist<tresh and distToOrgin<maxdif):
+                    output[neighbour[0], neighbour[1]] = 255
+                    if not neighbour in processed:
+                        list.append(neighbour)
+                else:
+                    output[neighbour[0], neighbour[1]] = 1
+                processed.append(neighbour)
+        list.pop(0)
+        #failsafe case RegionGrowing was too big: Liver is not bigger than 1/3 of the image
+        if  len(processed) > (img.shape[0]*img.shape[1]/3):
+            print("tresh too high")
+            cont = 0
+            output[0,0] = -1
+
+
+    return output
+
+#calculate the average value and minimal pixel difference of the pixels of a 5x5 kernel; closer ones are more weighted
+def AverageMinValueEightNeigh(img, point):
+    aver = 0
+    min = 500
+    rpoint = point
+    for n in eightNeighbours(point,img.shape):
+        for n2 in eightNeighbours(n,img.shape):
+            aver += img[n2[0], n2[1]]
+            dist = img[n2[0], n2[1]]-img[point[0],point[1]]
+            if dist < 0: dist *=-1
+            if (dist <min):
+                min = dist
+                rpoint = n2
+    aver /= 64
+    return aver,rpoint
+
+def eightNeighbours(seed,shape):
+    maximum = shape[0]-1
+    minimum = shape[1]-1
+    List = []
+    if (seed[0] == maximum or seed[1] == minimum):
+        List.append(seed)
+        return List
+    List.append(((seed[0]+1), seed[1]))
+    List.append(((seed[0] - 1), seed[1]))
+    List.append((seed[0], (seed[1]+1)))
+    List.append((seed[0], (seed[1]-1)))
+    List.append(((seed[0]+1), seed[1]+1))
+    List.append(((seed[0] - 1), seed[1]-1))
+    List.append((seed[0]-1, (seed[1]+1)))
+    List.append((seed[0]-1, (seed[1]-1)))
+
+    return List
+
+
+if __name__ == "__main__":
+    id = input("Input the Patient number and press enter")  # number of the patient
+    files = load_scan(data_path(id))
+    # display_image_stack(np.load(output_path + 'fullimages_{}.npy'.format(int(id))))
+    # display_image(files[int(input("Which Image do you want to see? 1-80"))])
+    # # imgs_after_resamp = resample(imgs_to_process, patient, [1, 1, 1])
+    # test = sample3d(files)
+    imtoArray(files)
+    fig, ax = plt.subplots(1, 1)
+    tracker = IndexTracker(ax, files)
+    fig.canvas.mpl_connect('scroll_event', tracker.onscroll)
+    plt.show()
+    plt.imshow(RGHandler(files,30, (180, 80), 200))
+    plt.show()
