@@ -9,6 +9,43 @@ import RegionGrowing as rg
 import scipy.ndimage
 
 
+class IndexTracker3(object):
+    def __init__(self, X, Y, Z, ax1, ax2, ax3, cmap="gray"):
+        self.ax1 = ax1
+        self.ax2 = ax2
+        ax1.set_title('use scroll wheel to navigate')
+        ax2.set_title('use scroll wheel to navigate')
+        ax3.set_title('use scroll wheel to navigate')
+        self.cmap = cmap
+        self.X = X
+        self.Y = Y
+        self.Z = Z
+        self.slices = len(X)
+        self.ind = self.slices // 2
+        self.points = []
+        self.im1 = ax1.imshow(self.X[self.ind], cmap=plt.get_cmap(cmap))
+        self.im2 = ax2.imshow(self.Y[self.ind], cmap=plt.get_cmap(cmap))
+        self.im3 = ax3.imshow(self.Z[self.ind], cmap=plt.get_cmap(cmap))
+        self.update()
+
+    def onscroll(self, event):
+        print("%s %s" % (event.button, event.step))
+        if event.button == 'up':
+            self.ind = (self.ind + 1) % self.slices
+        else:
+            self.ind = (self.ind - 1) % self.slices
+        self.update()
+
+    def update(self):
+        self.im2.set_data(self.Y[self.ind])
+        self.im1.set_data(self.X[self.ind])
+        self.im3.set_data(self.Z[self.ind])
+        ax1.set_ylabel('slice %s' % self.ind)
+        self.im1.axes.figure.canvas.draw()
+        self.im2.axes.figure.canvas.draw()
+        self.im3.axes.figure.canvas.draw()
+
+
 class IndexTracker2(object):
     def __init__(self, X, Y, ax1, ax2, cmap="gray"):
         self.ax1 = ax1
@@ -68,18 +105,18 @@ class IndexTracker(object):
 
     def onclick(self, event):
         print(math.floor(event.xdata), math.floor(event.ydata))
-        self.Click = (math.floor(event.xdata), math.floor(event.ydata))
+        self.Click = (math.floor(event.ydata), math.floor(event.xdata))
         self.inx = self.ind
         help = self.X[self.inx]
         # rect = help[self.Click[1]:self.Click[1] + 10, self.Click[0]:self.Click[0] + 10]
-        self.value = self.X[self.inx][math.floor(event.xdata), math.floor(event.ydata)]  # math.floor(rect.mean())
+        self.value = self.X[self.inx][math.floor(event.ydata), math.floor(event.xdata)]  # math.floor(rect.mean())
         print(self.value)
         print(self.Click)
         self.points.append(self.Click)
 
     def update(self):
         help = scipy.ndimage.rotate(self.X[self.ind], -135)
-        self.im.set_data(help)
+        self.im.set_data(self.X[self.ind])
         ax.set_ylabel('slice %s' % self.ind)
         # img = scipy.misc.lena()
         # tr = scipy.ndimage.rotate(img, 45)
@@ -300,18 +337,19 @@ def diffilter(imgStack, numberOfIterations=5):
     return result
 
 
-def imgscroll(files, fig, ax):
+def imgscroll(data, fig, ax):
     # fig, ax = plt.subplots(1, 1)
-    tracker = IndexTracker(ax, files)
-    fig.canvas.mpl_connect('scroll_event', tracker.onscroll)
-    fig.canvas.mpl_connect('button_press_event', tracker.onclick)
+    track = IndexTracker(ax, data)
+    fig.canvas.mpl_connect('scroll_event', track.onscroll)
+    fig.canvas.mpl_connect('button_press_event', track.onclick)
     plt.title("Patient" + str(id))
+    # plt.gca().invert_yaxis()
     plt.show()
-    return tracker
+    return track
 
 
-def morph_close(imgStack, numberofiterations=1):  # first dilatate then erode
-    kernel = np.ones((10, 10), np.uint8)
+def morph_close(imgStack, numberofiterations=1, kernelsize=10):  # first dilatate then erode
+    kernel = np.ones((kernelsize, kernelsize), np.uint8)
     result = imgStack
     for j in range(0, numberofiterations):
         for index in range(0, len(imgStack)):
@@ -402,49 +440,37 @@ if __name__ == "__main__":
     id = input("Input the Patient number and press enter")  # number of the patient
     files = load_scan(data_path(id))
     filesseg = load_scan(data_path(id, True))
-
     imtoArray(files)
-
     resize_image(files)
+    orig = sitk.GetImageFromArray(files)
+    orig = sitk.GetArrayFromImage(orig)
     arraytoIm(files)
-    diff(files, iterations=100, conductance=10000)
+    diff(files, iterations=25, conductance=35)
 
     # median(files)
     imtoArray(files)
-    window_image(files)
-    for x in range(0, len(files)):
-        print(str(len(files) - x) + " to go")
-        files[x] = MedianFilterImage(files[x])
+    # window_image(files)
     imtoArray(filesseg)
     resize_image(filesseg)
     # morph_close(files)
     print(files[0].size)
-    # resize_image(files)
     print(files[0].size)
     img = files[37]
     print(img[112, 39])
     seeds = []
 
-    # res = []
-    # print("median filtering: ")
-    # for x in range(0, len(files)):
-    #     print(str(len(files)-x)+ " to go")
-    #     files[x] = MedianFilterImage(files[x])
     display_image_stack(files)
     fig, ax = plt.subplots(1, 1)
     tracker = imgscroll(files, fig, ax)
     points, index, value = get_Click_values(tracker)  # points = array with clicked points
     for x in range(0, len(points)):  # appending points
         seeds.append(points[x])
-        # print(files[index][points[x[0]]][points[x[1]]])
-    seeds.append((86, 35))
-    seeds.append((125, 84))
     slices = rg.RGHandler(files, index, seeds, maxdif=40)
-    slices = morph_close(slices)
+    slices = morph_close(slices, 1, 15)
     map_down(slices)  # used for dice calculation
     dice_test(slices, filesseg)  # dice calculation , not sure if works
-    f, (ax1, ax2) = plt.subplots(1, 2, sharey=True)  # show our segmentation next to GT data
-    tracker = IndexTracker2(slices, filesseg, ax1, ax2)
+    f, (ax1, ax2, ax3) = plt.subplots(1, 3, sharey=True)  # show our segmentation next to GT data
+    tracker = IndexTracker3(orig, slices, filesseg, ax1, ax2, ax3)
     f.canvas.mpl_connect('scroll_event', tracker.onscroll)
     plt.title("Patient" + str(id))
     plt.show()
