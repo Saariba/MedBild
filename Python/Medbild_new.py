@@ -375,7 +375,7 @@ def diff(imgstack, iterations=40, conductance=5):
         timestep = diff.EstimateOptimalTimeStep(imgstack[x])
         diff.SetTimeStep(timestep)
         print(diff.GetConductanceScalingUpdateInterval())
-        diff.SetConductanceScalingUpdateInterval(5)
+        diff.SetConductanceScalingUpdateInterval(1)
         # print("timestep " + str(timestep))
         diff.SetConductanceParameter(conductance)
         imgstack[x] = diff.Execute(image)
@@ -431,12 +431,42 @@ def arraytoIm(imgStack):
 def window_image(imgStack, lower=50, upper=200):
     for x in range(0, len(imgStack)):
         img = imgStack[x]
-        img[img < lower] = 0
-        img[img > upper] = 400
+        img[img < lower - 90] = 0
+        img[img > upper - 50] = 400
         imgStack[x] = img
 
 
+def window_image_seg(imgStack, lower=3, upper=200):
+    for x in range(0, len(imgStack)):
+        img = imgStack[x]
+        img[img < lower] = 0
+        imgStack[x] = img
+
+
+def get_dice(imgStack, segStack):
+    arraytoIm(imgStack)
+    arraytoIm(segStack)
+    cast_image(imgStack)
+    cast_image(segStack)
+    dicenum = 0
+    for i in range(len(imgStack)):
+        dice = sitk.LabelOverlapMeasuresImageFilter()
+        dice.Execute(imgStack[i], segStack[i])
+        dicenum += dice.GetDiceCoefficient()
+        print(dicenum)
+    dicenum = dicenum / len(imgStack)
+    print("the dice is " + str(dicenum))
+
+
+def cast_image(imgstack):
+    for i in range(len(imgstack)):
+        cast = sitk.CastImageFilter()
+        cast.SetOutputPixelType(sitk.sitkInt16)
+        imgstack[i] = cast.Execute(imgstack[i])
+
+
 if __name__ == "__main__":
+
     id = input("Input the Patient number and press enter")  # number of the patient
     files = load_scan(data_path(id))
     filesseg = load_scan(data_path(id, True))
@@ -445,32 +475,31 @@ if __name__ == "__main__":
     orig = sitk.GetImageFromArray(files)
     orig = sitk.GetArrayFromImage(orig)
     arraytoIm(files)
-    diff(files, iterations=25, conductance=35)
-
-    # median(files)
+    diff(files, iterations=30, conductance=25)
     imtoArray(files)
-    # window_image(files)
     imtoArray(filesseg)
     resize_image(filesseg)
-    # morph_close(files)
-    print(files[0].size)
-    print(files[0].size)
-    img = files[37]
-    print(img[112, 39])
+    # get_dice(files, filesseg)
     seeds = []
 
     display_image_stack(files)
     fig, ax = plt.subplots(1, 1)
     tracker = imgscroll(files, fig, ax)
     points, index, value = get_Click_values(tracker)  # points = array with clicked points
-    for x in range(0, len(points)):  # appending points
+    x = points[0][0]
+    y = points[0][1]
+    window_image(files, files[index][x][y], files[index][x][y])
+    # fig, ax = plt.subplots(1, 1)
+    # tracker = imgscroll(files, fig, ax)
+    for x in range(1, len(points)):  # appending points
         seeds.append(points[x])
-    slices = rg.RGHandler(files, index, seeds, maxdif=40)
-    slices = morph_close(slices, 1, 15)
-    map_down(slices)  # used for dice calculation
-    dice_test(slices, filesseg)  # dice calculation , not sure if works
+    slices = rg.RGHandler(files, index, seeds, maxdif=100)
+    slices = morph_close(slices, 1, 10)
+
+    print('watch now')  # used for dice calculation # dice calculation , not sure if works
     f, (ax1, ax2, ax3) = plt.subplots(1, 3, sharey=True)  # show our segmentation next to GT data
     tracker = IndexTracker3(orig, slices, filesseg, ax1, ax2, ax3)
     f.canvas.mpl_connect('scroll_event', tracker.onscroll)
     plt.title("Patient" + str(id))
     plt.show()
+    get_dice(slices, filesseg)
