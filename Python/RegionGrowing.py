@@ -4,7 +4,7 @@ import time
 #Handles everything around RegionGrowing as Validation and multi layer
 #maxdif - maximal difference every pixel is allowed to differ from the original seed
 #returns the segmented image stack
-def RGHandler(imgstack,startindex, startseed, maxdif):
+def RGHandler(imgstack,startindex, startseed, maxdif, takeborders):
     seed = startseed
     index = startindex
     slidestack = imgstack.copy() # to store the results
@@ -25,7 +25,7 @@ def RGHandler(imgstack,startindex, startseed, maxdif):
     endtime = time.localtime(time.time())
     print("Zeit für RG:",endtime[5]-starttime[5],"s")
     # Validate first slide
-    while(currslide[0,0] == -1):
+    while(currslide[0,0] == -1 and cont == 1):
         #currslide = RegionGrowing(imgstack[index],seed,tresh-2,maxdif,originalSeedAverage)
         #TODO: Failhandling
         cont = 0
@@ -38,7 +38,6 @@ def RGHandler(imgstack,startindex, startseed, maxdif):
     slidestack[index] = currslide
 
     #Perform the same on the following slides
-
     highBound = len(imgstack)-1 # HERE: Stellt hier ein wie viele Slides er nach oben gehen soll
     print("It is going up!")
     while(index < highBound and cont):
@@ -61,6 +60,10 @@ def RGHandler(imgstack,startindex, startseed, maxdif):
                 print("to go:",(highBound-index))
                 currslide = RegionGrowing(imgstack[index], seed, tresh,maxdif,originalSeedAverage)
 
+                # add Borders for the next iteration
+                if (takeborders):
+                    for sp in Borders:
+                        imgstack[index -1][sp[0], sp[1]] = 0
                 # show me the Borders
                 # for sp in Borders:
                 #     slidestack[index -1][sp[0], sp[1]] = 200
@@ -109,6 +112,11 @@ def RGHandler(imgstack,startindex, startseed, maxdif):
                 print("to go:", (index-lowBound))
                 currslide = RegionGrowing(imgstack[index], seed, tresh, maxdif, originalSeedAverage)
 
+                #add Borders for the next iteration
+                if (takeborders):
+                    for sp in Borders:
+                     imgstack[index +1][sp[0], sp[1]] = 0
+
                 ##show me the Borders
                 # for sp in Borders:
                 #     slidestack[index +1][sp[0], sp[1]] = 200
@@ -129,8 +137,10 @@ def RGHandler(imgstack,startindex, startseed, maxdif):
                     cont = 0
                     currslide = RegionGrowing(imgstack[index], seed, tresh - 2, maxdif, originalSeedAverage)
                 slidestack[index] = currslide
-
-    return slidestack
+    if (takeborders):
+        return RGHandler(imgstack,startindex,startseed,maxdif,0)
+    else:
+        return slidestack
 
 #Computes the new Seedpoint
 #input: Source Image and TargetImage for comparison along the comparison line
@@ -144,7 +154,7 @@ def GetNewSeed(imgsource,imgtarget,comparline):
         intensT,y = AverageMinValueEightNeigh(imgtarget,l)
         compars.append(dif(intensT,intensS))
     #get all seeds that have a minimum distance better than min
-    min = 5
+    min = 3
     runner = 0
     for c in compars:
         if (c < min):
@@ -156,10 +166,10 @@ def GetComparisonLine(res,y,x):
     i = 4
     output = []
     borders = []
-    maxborderlength = 15 #HERE: Stellt hier die Länge der Grenze ein
+    maxborderlength = 10 #HERE: Stellt hier die Länge der Grenze ein
     if (x != 0):
         while (i < res.shape[1]-9):#9 to cut out possible points that are too close to the border
-            i+=4
+            i+=2
             up = 0
             cont = 1
             inAreaCounter = 0
@@ -189,7 +199,7 @@ def GetComparisonLine(res,y,x):
     if (y != 0):
         i = 4
         while (i < res.shape[0] - 9):  # 9 to cut out possible points that are too close to the border
-            i += 4
+            i += 2
             up = 0
             cont = 1
             inAreaCounter = 0
@@ -223,50 +233,65 @@ def GetComparisonLine(res,y,x):
 def RegionGrowing(img, seed,tresh, maxdif, seedAV):
     checkers = [] #points that are in need to be checked
     output = np.zeros_like(img)
+    counter = 0
+    treshHolds = []
     if (isinstance(seed,list)):
         for sp in seed:
-            checkers.append(sp)
+            checkers.append((sp[0],sp[1],counter))
+            treshHolds.append(0)
+            counter += 1
     else:
-        checkers.append(seed)
+        checkers.append((seed[0],seed[1],0))
     cont = 1
     starttime = time.localtime(time.time())
     processed = 0 # counts our processed points for failsafe
     tresh = 0
+    alpha = 0.4
     while (len(checkers)>0 and cont):
         current = checkers[0]
         output[current[0], current[1]] = 255
 
-        #The first 25 Pixel around a seed are seen as in the liver. Compute them first
-        if (processed <= len(seed)*25):
+        #The first 16 Pixel around a seed are seen as in the liver. Compute them first
+        if (processed <= len(seed)*16):
             for neigh in eightNeighbours(current,img.shape):
                 if (output[neigh[0],neigh[1]]==0):
                     dist = dif(img[neigh[0], neigh[1]], img[current[0], current[1]])
                     if (dist < maxdif):
                         output[neigh[0], neigh[1]] = 255
-                        checkers.append(neigh)
-                        if (dif(img[neigh[0],neigh[1]],img[current[0],current[1]])> tresh):
-                            tresh = dif(img[neigh[0],neigh[1]],img[current[0],current[1]])
+                        checkers.append((neigh[0],neigh[1],current[2]))
+                        treshHolds[current[2]] += dif(img[neigh[0],neigh[1]],img[current[0],current[1]])
+                        # if (dif(img[neigh[0],neigh[1]],img[current[0],current[1]])> tresh):
+                        #     tresh = dif(img[neigh[0],neigh[1]],img[current[0],current[1]])
                     processed += 1
+        elif (processed+1 == len(seed)*16):
+            counter = 0
+            processed += 1
+            for tre in treshHolds:
+                treshHolds[counter] = tre/16
+                counter +=1
         #continue with the unsafe points
-        for neighbour in eightNeighbours(current,img.shape): #perform the search for correspondent pixel in 8N
-            if (output[neighbour[0], neighbour[1]] == 0):
-                dist = dif(img[neighbour[0], neighbour[1]],img[current[0], current[1]])
-                distToOrgin = dif(img[neighbour[0], neighbour[1]],seedAV)
-                # check whether the new pixel is around our current pixel and in the valuespace around our seed
-                if (dist<=tresh and distToOrgin<maxdif):
-                    output[neighbour[0], neighbour[1]] = 255
-                    checkers.append(neighbour)
-                else:
-                    output[neighbour[0], neighbour[1]] = 1
-                processed += 1
+        if (processed > len(seed)*16):
+            for neighbour in eightNeighbours(current,img.shape): #perform the search for correspondent pixel in 8N
+                if (output[neighbour[0], neighbour[1]] == 0):
+                    dist = dif(img[neighbour[0], neighbour[1]],img[current[0], current[1]])
+                    distToOrgin = dif(img[neighbour[0], neighbour[1]],seedAV)
+                    # check whether the new pixel is around our current pixel and in the valuespace around our seed
+                    tresh = treshHolds[current[2]]
+                    if (dist<=tresh and distToOrgin<maxdif):
+                        output[neighbour[0], neighbour[1]] = 255
+                        checkers.append((neighbour[0],neighbour[1],current[2]))
+                        treshHolds[current[2]] = tresh + alpha*(tresh - dist) # Update tresh on every occasion
+                    else:
+                        output[neighbour[0], neighbour[1]] = 1
+                    processed += 1
         checkers.pop(0)
 
         #failsafe case RegionGrowing is taking longer than 10s
         currtime = time.localtime(time.time())
         if (currtime[5]-starttime[5] >= 10):
-            cont = 0
+            #cont = 0
             print("RegionGrowing took to long- adjusting")
-            output[0, 0] = -1
+            #output[0, 0] = -1
 
         #failsafe case RegionGrowing was too big: Liver is not bigger than 1/3 of the image
         if  processed > ((img.shape[0]*img.shape[1])/3):
