@@ -125,6 +125,8 @@ class IndexTracker(object):
 
 def data_path(x, seg=False):
     if seg:
+        # if int(x) > 6:
+        #     (x) = x + 1
         if len(x) == 1:
             x = '0' + x.lstrip()
         path = "./Ps" + x.lstrip() + '/'
@@ -392,25 +394,6 @@ def median(imgstack):
         imgstack[x] = med.Execute(img)
 
 
-def dice_test(imgstack, segstack):
-    dice = 0
-    for x in range(0, len(imgstack)):
-        img = imgstack[x]
-        seg = segstack[x]
-
-        dice += round((np.sum(np.where(img == seg))) * 2.0 / ((np.sum(img) + np.sum(seg))), 3)
-
-        print
-        'Dice similarity score is {}'.format(dice)
-    dice = dice / len(imgstack)
-    print("dice for the whole stack: " + str(dice))
-
-
-# def myFilter(imgStack, kernel=3):
-#     for x in range(imgStack):
-#         img = imgStack[x]
-
-
 def map_down(imgstack):
     for x in range(0, len(imgstack)):
         imgstack[x] = cv.normalize(imgstack[x], imgstack[x], 0, 3, cv.NORM_MINMAX)
@@ -431,8 +414,8 @@ def arraytoIm(imgStack):
 def window_image(imgStack, lower=50, upper=200):
     for x in range(0, len(imgStack)):
         img = imgStack[x]
-        img[img < lower - 90] = 0
-        img[img > upper - 50] = 400
+        img[img < lower - 200] = 0
+        img[img > upper - 90] = img[img > upper - 90] + 100
         imgStack[x] = img
 
 
@@ -448,14 +431,27 @@ def get_dice(imgStack, segStack):
     arraytoIm(segStack)
     cast_image(imgStack)
     cast_image(segStack)
-    dicenum = 0
+    respic = []
+    res = 0
+    x = 0
     for i in range(len(imgStack)):
-        dice = sitk.LabelOverlapMeasuresImageFilter()
-        dice.Execute(imgStack[i], segStack[i])
-        dicenum += dice.GetDiceCoefficient()
-        print(dicenum)
-    dicenum = dicenum / len(imgStack)
-    print("the dice is " + str(dicenum))
+        print('do stuff: ' + str(i))
+        img = sitk.Cast(segStack[i], sitk.sitkLabelUInt8)
+        segimg = sitk.Cast(imgStack[i], sitk.sitkUInt8)
+
+        overlayimg = sitk.LabelMapContourOverlay(img, segimg)
+        respic.append(overlayimg)
+
+        overlapfilter = sitk.LabelOverlapMeasuresImageFilter()
+        overlapfilter.Execute(sitk.Cast(img, sitk.sitkUInt8), segimg)
+        result = overlapfilter.GetDiceCoefficient()
+        if 0 < result < 2:
+            print(result)
+            res = res + result
+            x = x + 1
+    print('can not evaluate dice in: ' + str(len(imgStack) - x) + ' slices')
+    print(res / x)
+    return respic
 
 
 def cast_image(imgstack):
@@ -465,8 +461,33 @@ def cast_image(imgstack):
         imgstack[i] = cast.Execute(imgstack[i])
 
 
-if __name__ == "__main__":
+def mydice(imgstack, segstack):
+    for i in range(len(imgstack)):
+        img = imgstack[i]
+        seg = segstack[i]
+        imgs = np.isin(img, 3)
+        print(imgs)
+        segs = np.isin(seg, 3)
+        print(segs)
+        imgsize = list(imgs.flatten()).count(True)
+        segsize = list(segs.flatten()).count(True)
+        a = np.where(np.isclose(img,3))
+        print(a)
+        b = np.where(np.isclose(seg,3))
+        print(b)
+        a = a[0]
+        b = b[0]
+        print(a)
+        print(b)
+        union = np.sum(a,b)
+        dice = union / (imgsize + segsize)
+        print(dice)
 
+
+if __name__ == "__main__":
+    a = [5, 8, 9, 9, 5, 5]
+    index = np.where(np.isclose(a,9))
+    print(index)
     id = input("Input the Patient number and press enter")  # number of the patient
     files = load_scan(data_path(id))
     filesseg = load_scan(data_path(id, True))
@@ -489,17 +510,25 @@ if __name__ == "__main__":
     x = points[0][0]
     y = points[0][1]
     window_image(files, files[index][x][y], files[index][x][y])
-    # fig, ax = plt.subplots(1, 1)
-    # tracker = imgscroll(files, fig, ax)
-    for x in range(1, len(points)):  # appending points
+    fig, ax = plt.subplots(1, 1)
+    tracker = imgscroll(files, fig, ax)
+    for x in range(0, len(points)):  # appending points
         seeds.append(points[x])
-    slices = rg.RGHandler(files, index, seeds, maxdif=100)
+    slices = rg.RGHandler(files, index, seeds, maxdif=100, takeborders=False)
     slices = morph_close(slices, 1, 10)
 
-    print('watch now')  # used for dice calculation # dice calculation , not sure if works
+    window_image_seg(filesseg)
+    for i in range(len(slices)):
+        img = slices[i]
+    img[img > 20] = 3
+    slices[i] = img
     f, (ax1, ax2, ax3) = plt.subplots(1, 3, sharey=True)  # show our segmentation next to GT data
     tracker = IndexTracker3(orig, slices, filesseg, ax1, ax2, ax3)
     f.canvas.mpl_connect('scroll_event', tracker.onscroll)
     plt.title("Patient" + str(id))
     plt.show()
-    get_dice(slices, filesseg)
+    # mydice(slices, filesseg)
+    respic = get_dice(slices, filesseg)
+    imtoArray(respic)
+    fig, ax = plt.subplots(1, 1)
+    tracker = imgscroll(respic, fig, ax)
