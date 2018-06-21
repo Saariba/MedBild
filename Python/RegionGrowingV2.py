@@ -45,9 +45,10 @@ def RGHandler(imgstack,startindex, startseed, leakCorrection):
                 if (leakCorrection):
                     for sp in Borders:
                         imgstack[index - 1][sp[0], sp[1]] = 0
+                        outputStack[index - 1][sp[0], sp[1]] = 0
                 # show me the Borders
                 # for sp in Borders:
-                #     slidestack[index -1][sp[0], sp[1]] = 200
+                #     outputStack[index -1][sp[0], sp[1]] = 200
 
                 # show me the comparison line
                 # for sp in Line:
@@ -92,10 +93,11 @@ def RGHandler(imgstack,startindex, startseed, leakCorrection):
                 if (leakCorrection):
                     for sp in Borders:
                         imgstack[index + 1][sp[0], sp[1]] = 0
+                        outputStack[index + 1][sp[0], sp[1]] = 0
 
                 ##show me the Borders
                 # for sp in Borders:
-                #     slidestack[index +1][sp[0], sp[1]] = 200
+                #     outputStack[index +1][sp[0], sp[1]] = 200
                 # show me the comparison line
                 # for sp in Line:
                 #     currslide[sp[0], sp[1]] = 140
@@ -133,6 +135,7 @@ def RegionGrowing(img,seeds,eKernel):
     processed = 0
     #initialize the seeds
     counter = 0
+    cont = 1
     for s in seeds:
         avg,sdevo,sdevu = GetAverageAndSDeviation(img,s,eKernel)
         seedData.append((s[0],s[1],avg,sdevo*1.5,sdevu*1.5))
@@ -140,7 +143,7 @@ def RegionGrowing(img,seeds,eKernel):
         toBeChecked.append((s[0],s[1],counter))
         counter +=1
     #perform the regionGrowing
-    while(len(toBeChecked) >0):
+    while(len(toBeChecked) >0 and cont):
         p = toBeChecked[0]
         #point was already considered?
         if ((segmentImg[p[0],p[1]] != p[2] and segmentImg[p[0],p[1]] != 255) or segmentImg[p[0],p[1]] == 0):
@@ -259,7 +262,7 @@ def GetComparisonLine(res,y,x, kernel):
     i = 4
     output = []
     borders = []
-    maxborderlength = 10 #HERE: Stellt hier die Länge der Grenze ein
+    maxborderlength = 13 #HERE: Stellt hier die Länge der Grenze ein
     rgKernelSize = kernel
     i+=rgKernelSize
     if (x != 0):
